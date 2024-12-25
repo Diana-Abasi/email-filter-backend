@@ -4,40 +4,56 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// Add an email to the whitelist
+// Get all whitelist entries for the logged-in user
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    const whitelist = await Whitelist.find({ user: req.user.id });
+    res.status(200).json(whitelist);
+  } catch (err) {
+    console.error('Error fetching whitelist:', err.message);
+    res.status(500).json({ message: 'Error fetching whitelist', error: err.message });
+  }
+});
+
+// Add a new email to the whitelist
 router.post('/', authMiddleware, async (req, res) => {
   const { email } = req.body;
 
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' });
+  }
+
   try {
-    const whitelistEntry = new Whitelist({
-      user: req.user.id,
-      email,
-    });
+    const existingEntry = await Whitelist.findOne({ user: req.user.id, email });
+    if (existingEntry) {
+      return res.status(400).json({ message: 'Email is already in the whitelist' });
+    }
 
-    const savedWhitelist = await whitelistEntry.save();
-
-    // Debug: Log saved whitelist entry
-    console.log('Saved whitelist entry:', savedWhitelist);
-
-    res.status(201).json(savedWhitelist);
+    const whitelistEntry = new Whitelist({ user: req.user.id, email });
+    const savedEntry = await whitelistEntry.save();
+    res.status(201).json(savedEntry);
   } catch (err) {
-    console.error('Error adding email to whitelist:', err.message); // Debugging log
+    console.error('Error adding email to whitelist:', err.message);
     res.status(500).json({ message: 'Error adding email to whitelist', error: err.message });
   }
 });
 
-// Retrieve all whitelisted emails
-router.get('/', authMiddleware, async (req, res) => {
+// Delete a whitelist entry by ID
+router.delete('/:id', authMiddleware, async (req, res) => {
   try {
-    const whitelistedEmails = await Whitelist.find({ user: req.user.id });
+    const whitelistEntry = await Whitelist.findOneAndDelete({
+      _id: req.params.id,
+      user: req.user.id,
+    });
 
-    // Debug: Log retrieved whitelist emails
-    console.log('Retrieved whitelist emails:', whitelistedEmails);
+    if (!whitelistEntry) {
+      return res.status(404).json({ message: 'Whitelist entry not found' });
+    }
 
-    res.json(whitelistedEmails);
+    res.status(200).json({ message: 'Whitelist entry deleted successfully' });
   } catch (err) {
-    console.error('Error retrieving whitelist:', err.message);
-    res.status(500).json({ message: 'Error retrieving whitelist', error: err.message });
+    console.error('Error deleting whitelist entry:', err.message);
+    res.status(500).json({ message: 'Error deleting whitelist entry', error: err.message });
   }
 });
 

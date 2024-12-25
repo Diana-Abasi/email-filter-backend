@@ -1,33 +1,29 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const dotenv = require('dotenv');
-const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
-const quarantineRoutes = require('./routes/quarantine');
-const whitelistRoutes = require('./routes/whitelist');
-const adminRoutes = require('./routes/admin');
-require('./scheduler/cleanup'); // Automatically schedules cleanup task
-require('./scheduler/dailySummary'); // Automatically schedules daily summary
+const emailRoutes = require('./routes/email'); // Email route
+const settingsRoutes = require('./routes/settings'); // Settings route
+const quarantineRoutes = require('./routes/quarantine'); // Quarantine route
+const whitelistRoutes = require('./routes/whitelist'); // Whitelist route
 
-// Load environment variables
 dotenv.config();
 
-// Initialize express app
 const app = express();
+app.use(express.json()); // Middleware to parse JSON
 
-// Connect to MongoDB
-connectDB();
+// MongoDB connection
+mongoose
+  .connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('MongoDB connected successfully'))
+  .catch((err) => console.error('Error connecting to MongoDB:', err.message));
 
-// Middleware to parse JSON
-app.use(express.json());
-
-// API routes
+// Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/email', emailRoutes);
+app.use('/api/settings', settingsRoutes);
 app.use('/api/quarantine', quarantineRoutes);
 app.use('/api/whitelist', whitelistRoutes);
-app.use('/api/admin', adminRoutes);
 
-// Start the server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));

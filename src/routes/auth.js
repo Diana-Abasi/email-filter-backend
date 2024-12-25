@@ -1,26 +1,39 @@
+const express = require('express');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const User = require('../models/User');
 
-const authMiddleware = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+const router = express.Router();
 
-  if (!token) {
-    console.log('Authorization header missing'); // Debug log
-    return res.status(401).json({ message: 'No token provided' });
-  }
+// Login route
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body;
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = { id: decoded.id, email: decoded.email }; // Attach user info to request
+    // Check if the user exists
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
 
-    // Debug: Log decoded token
-    console.log('Decoded user from token:', req.user);
+    // Compare provided password with hashed password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
 
-    next();
+    // Generate a token
+    const token = jwt.sign(
+      { id: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.status(200).json({ token });
   } catch (err) {
-    console.error('Invalid token:', err.message); // Debugging log
-    res.status(403).json({ message: 'Invalid token' });
+    console.error('Error during login:', err.message);
+    res.status(500).json({ message: 'Login failed', error: err.message });
   }
-};
+});
 
-module.exports = authMiddleware;
+module.exports = router;

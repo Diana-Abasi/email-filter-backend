@@ -1,33 +1,49 @@
 const express = require('express');
 const QuarantinedEmail = require('../models/QuarantinedEmail');
 const Whitelist = require('../models/Whitelist');
+const UserSettings = require('../models/UserSettings');
 const authMiddleware = require('../middleware/authMiddleware');
-const { sendEmail } = require('../utils/email');
+const { sendEmail } = require('./email');
 
 const router = express.Router();
 
-const suspiciousKeywords = ["prize", "win", "urgent", "click here", "claim", "offer"];
+// Default suspicious keywords
+const defaultKeywords = ["prize", "win", "urgent", "click here", "claim", "offer"];
 
+// Add a quarantined email
 router.post('/', authMiddleware, async (req, res) => {
   const { sender, subject, body } = req.body;
 
   try {
     console.log('Incoming email:', { sender, subject, body });
 
-    // Check if the sender is in the whitelist
-    const isWhitelisted = await Whitelist.findOne({ user: req.user.id, email: sender });
-    console.log('Whitelist check result:', isWhitelisted);
+    // Fetch user settings
+    const userSettings = await UserSettings.findOne({ user: req.user.id });
+    const customAlwaysTrust = userSettings?.customRules?.alwaysTrust || [];
+    const customAlwaysQuarantine = userSettings?.customRules?.alwaysQuarantine || [];
+    const quarantineRetention = userSettings?.quarantineRetention || 30;
 
-    if (isWhitelisted) {
+    console.log('User settings loaded:', { customAlwaysTrust, customAlwaysQuarantine, quarantineRetention });
+
+    // Check if the sender is in the whitelist or customAlwaysTrust
+    const isWhitelisted = await Whitelist.findOne({ user: req.user.id, email: sender });
+    console.log(`Sender ${sender} isWhitelisted:`, !!isWhitelisted);
+
+    const isTrustedSender = customAlwaysTrust.some((rule) => sender.includes(rule));
+    console.log(`Sender ${sender} isTrustedSender (customAlwaysTrust):`, isTrustedSender);
+
+    if (isWhitelisted || isTrustedSender) {
+      console.log('Sender is trusted and not quarantined:', sender);
       return res.status(200).json({ message: 'Email is trusted and not quarantined' });
     }
 
-    // Check for suspicious keywords
+    // Combine default and custom quarantine keywords
+    const combinedKeywords = [...defaultKeywords, ...customAlwaysQuarantine];
     const combinedText = `${subject} ${body}`.toLowerCase();
-    const hasSuspiciousKeyword = suspiciousKeywords.some((keyword) =>
+
+    const hasSuspiciousKeyword = combinedKeywords.some((keyword) =>
       combinedText.includes(keyword.toLowerCase())
     );
-    console.log('Contains suspicious keyword:', hasSuspiciousKeyword);
 
     let quarantineReason = 'Untrusted sender';
     if (hasSuspiciousKeyword) {
@@ -48,7 +64,11 @@ router.post('/', authMiddleware, async (req, res) => {
     // Notify the user via email
     const userEmail = req.user.email;
     const emailText = `A new email has been quarantined:\n\nSender: ${sender}\nSubject: ${subject}\nReason: ${quarantineReason}`;
-    sendEmail(userEmail, 'Quarantined Email Notification', emailText);
+    try {
+      await sendEmail(userEmail, 'Quarantined Email Notification', emailText);
+    } catch (err) {
+      console.error('Error sending email:', err.message);
+    }
 
     res.status(201).json(savedEmail);
   } catch (err) {
