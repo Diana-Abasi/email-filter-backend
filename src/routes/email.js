@@ -1,6 +1,6 @@
 const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
-const filterEmail = require('../utils/emailFilter'); // Filter logic utility
+const filterEmail = require('../utils/emailFilter');
 
 const router = express.Router();
 
